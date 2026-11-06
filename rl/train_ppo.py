@@ -37,8 +37,10 @@ class ResidualActionAdapter(VecEnvWrapper):
         )
         from controllers.classical_push import ClassicalPushController
 
+        success_dists = self.venv.env_method("_get_success_dist")
         self.controllers = [
-            ClassicalPushController() for _ in range(self.num_envs)
+            ClassicalPushController(success_dist=success_dist)
+            for success_dist in success_dists
         ]
         self.classical_actions = np.zeros((self.num_envs, 3), dtype=np.float32)
 
@@ -63,10 +65,17 @@ class ResidualActionAdapter(VecEnvWrapper):
     def step_wait(self):
         observations, rewards, dones, infos = self.venv.step_wait()
         classical_actions = []
-        for i, (controller, observation, done) in enumerate(
-            zip(self.controllers, observations, dones)
+        for i, (controller, observation, done, info) in enumerate(
+            zip(self.controllers, observations, dones, infos)
         ):
             if done:
+                terminal_observation = info.get("terminal_observation")
+                if terminal_observation is None:
+                    raise KeyError("Done environment is missing terminal_observation")
+                terminal_action = controller.predict(terminal_observation)
+                info["terminal_observation"] = np.concatenate(
+                    (terminal_observation, terminal_action)
+                ).astype(np.float32)
                 controller.reset()
             classical_actions.append(controller.predict(observation))
         self.classical_actions = np.stack(classical_actions)
@@ -138,7 +147,7 @@ class InfoLoggerCallback(BaseCallback):
                 self.ep_terms[i].clear()
         return True
 
-def main(mode="ppo"):
+def main(mode="ppo", curriculum=False):
     if mode not in {"ppo", "residual"}:
         raise ValueError(f"Unknown training mode: {mode}")
 
@@ -196,12 +205,14 @@ def main(mode="ppo"):
         render=False,
     )
 
-    curriculum = CurriculumCallback(start=0.10, end=0.01)
+    callbacks = [InfoLoggerCallback(), eval_callback]
+    if curriculum:
+        callbacks.insert(0, CurriculumCallback(start=0.10, end=0.01))
 
     model.learn(
-        total_timesteps=10_000_000,
+        total_timesteps=1_000_000,
         tb_log_name=f"PushEnv_{mode}",
-        callback=CallbackList([curriculum, InfoLoggerCallback(), eval_callback]),
+        callback=CallbackList(callbacks),
         progress_bar=True,
     )
 
@@ -225,4 +236,10 @@ if __name__ == "__main__":
 
     parser = argparse.ArgumentParser()
     parser.add_argument("--mode", choices=("ppo", "residual"), default="ppo")
-    main(parser.parse_args().mode)
+    parser.add_argument(
+        "--curriculum",
+        action="store_true",
+        help="Enable success-distance curriculum (default: use PushEnv's default)",
+    )
+    args = parser.parse_args()
+    main(args.mode, curriculum=args.curriculum)

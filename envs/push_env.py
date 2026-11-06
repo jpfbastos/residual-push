@@ -228,7 +228,7 @@ class PushEnv(gym.Env):
         return bool(in_xy and p[2] > self.table_top - 0.01)
 
     def _get_success_dist(self):
-        return self.success_dist if self.success_dist is not None else 0.1
+        return self.success_dist if self.success_dist is not None else 0.01
 
     def render(self):
         if self._viewer is None:

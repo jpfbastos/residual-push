@@ -46,6 +46,14 @@ python rl/train_ppo.py --mode ppo
 python rl/train_ppo.py --mode residual
 ```
 
+Training uses `PushEnv`'s default `success_dist` by default. Add
+`--curriculum` to start with a wider success zone and progressively shrink it:
+
+```bash
+python rl/train_ppo.py --mode ppo --curriculum
+python rl/train_ppo.py --mode residual
+```
+
 Evaluate a trained controller by selecting its mode and matching
 `VecNormalize` statistics file:
 
