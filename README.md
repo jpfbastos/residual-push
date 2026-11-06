@@ -38,16 +38,20 @@ mjpython scripts/cartesian_impedance_demo.py
 mjpython scripts/eval_classical_push.py
 ```
 
-Train PPO (this can take a long time):
+Train either a direct PPO controller or a classical-plus-PPO residual
+controller (this can take a long time):
 
 ```bash
-python rl/train_ppo.py
+python rl/train_ppo.py --mode ppo
+python rl/train_ppo.py --mode residual
 ```
 
-Evaluate the saved best checkpoint after training:
+Evaluate a trained controller by selecting its mode and matching
+`VecNormalize` statistics file:
 
 ```bash
-mjpython scripts/eval_ppo.py
+mjpython scripts/eval_ppo.py --mode ppo --stats models/best/vecnormalize.pkl
+mjpython scripts/eval_ppo.py --mode residual --stats models/residual/best/vecnormalize.pkl
 ```
 
 Run the controller analysis and optionally write plots:

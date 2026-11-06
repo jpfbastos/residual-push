@@ -1,52 +1,45 @@
 from pathlib import Path
 import sys
 
+import numpy as np
+
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
-import gymnasium as gym, numpy as np
+import gymnasium as gym
 import envs
 
-env = gym.make("PushEnv-v0", render_mode="human", success_dist=0.01)
+from controllers.classical_push import ClassicalPushController
 
-observation, info = env.reset()
 
-terminated = False
-truncated = False
+def main(n_episodes=5):
+    env = gym.make(
+        "PushEnv-v0", render_mode="human", success_dist=0.01
+    )
+    controller = ClassicalPushController(success_dist=0.01)
 
-action = env.action_space.sample()
+    try:
+        for episode in range(n_episodes):
+            controller.reset()
+            observation, _ = env.reset()
+            terminated = truncated = False
+            total_reward = 0.0
 
-pushing = False
+            while not (terminated or truncated):
+                action = controller.predict(observation)
+                observation, reward, terminated, truncated, info = env.step(action)
+                total_reward += reward
 
-while not (terminated or truncated):
-    obs, reward, terminated, truncated, info = env.step(action)
+            print(
+                f"Episode {episode}: reward={total_reward:.3f}  "
+                f"success={info.get('is_success')}  "
+                f"off_table={info.get('off_table')}  "
+                f"truncated={truncated}  "
+                f"final_dist={info.get('dist'):.4f}"
+            )
+    finally:
+        env.close()
 
-    # vector between block -> goal (xy):       0
-    # vector between pusher -> block (xyz):    2
-    # block pose yaw as sin/cos pair:          5
-    # block linear velocity (xy):              7
-    # block yaw rate:                          9
-    # pusher state absolute position (xyz):    10
-    # pusher state absolute velocity (xyz):    13
-    # previous action (xyz):                   16
 
-    tip_to_block = obs[2:5]
-    tip_to_block_dist = np.linalg.norm(tip_to_block)
-    tip_to_block_normalised = tip_to_block / tip_to_block_dist
-    block_to_goal = np.append(obs[0:2], 0)
-    block_to_goal_dist = np.linalg.norm(block_to_goal)
-    block_to_goal_normalised = block_to_goal / block_to_goal_dist
-
-    angle = np.arccos(np.clip(np.dot(tip_to_block_normalised, block_to_goal_normalised), -1.0, 1.0))
-
-    if not pushing:
-        action = tip_to_block - block_to_goal_normalised * 0.1
-        pushing = tip_to_block[2] > -0.01 and np.linalg.norm(action) < 0.1 and angle < np.pi / 5
-    else:
-        if block_to_goal_dist > env.env.env.success_dist:
-            action = tip_to_block + block_to_goal
-            pushing = angle < np.pi / 4
-        else:
-            action = np.zeros(3)
-
-env.close()
+if __name__ == "__main__":
+    main()
