@@ -1,9 +1,10 @@
 from collections import defaultdict
+from datetime import datetime
+import json
 from pathlib import Path
 import sys
 
 import numpy as np
-from stable_baselines3.common.callbacks import EvalCallback
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
@@ -115,6 +116,22 @@ class CurriculumCallback(BaseCallback):
     def _on_step(self) -> bool:
         return True
 
+class SeededEvalCallback(EvalCallback):
+    """EvalCallback that re-seeds the eval env before every evaluation.
+
+    Every checkpoint is then scored on the same episodes, so "best model"
+    reflects the policy rather than an easy draw of start/goal poses.
+    """
+    def __init__(self, *args, eval_seed, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.eval_seed = eval_seed
+
+    def _on_step(self) -> bool:
+        if self.eval_freq > 0 and self.n_calls % self.eval_freq == 0:
+            self.eval_env.seed(self.eval_seed)  # applied on the next reset()
+        return super()._on_step()
+
+
 class SaveVecNormCallback(BaseCallback):
     """Runs only when EvalCallback finds a new best model."""
     def __init__(self, path):
@@ -141,22 +158,60 @@ class InfoLoggerCallback(BaseCallback):
             if done:
                 for k, v in self.ep_terms[i].items():
                     self.logger.record_mean(f"episode_terms/{k}", v)
+                self.logger.record_mean("episode/success", float(info["is_success"]))
                 self.logger.record_mean("episode/off_table", float(info["off_table"]))
                 self.logger.record_mean("episode/final_dist", float(info["dist"]))
                 self.logger.record_mean("episode/success_dist", float(info.get("success_dist", np.nan)))
                 self.ep_terms[i].clear()
         return True
 
-def main(mode="ppo", curriculum=False):
+def make_run_dir(mode, seed, run_name=None):
+    """runs/<mode>/<run_name>/ — one folder per training run, never overwritten."""
+    if run_name is None:
+        run_name = f"{datetime.now():%Y%m%d-%H%M%S}_seed{seed}"
+    run_dir = ROOT / "runs" / mode / run_name
+    if run_dir.exists():
+        raise FileExistsError(f"Run directory already exists: {run_dir}")
+    (run_dir / "best").mkdir(parents=True)
+    return run_dir
+
+
+def main(
+    mode="ppo",
+    curriculum=False,
+    seed=42,
+    total_timesteps=10_000_000,
+    n_envs=8,
+    eval_seed=1_000_000,
+    run_name=None,
+):
     if mode not in {"ppo", "residual"}:
         raise ValueError(f"Unknown training mode: {mode}")
 
+    run_dir = make_run_dir(mode, seed, run_name)
+    best_dir = run_dir / "best"
+    with open(run_dir / "args.json", "w") as f:
+        json.dump(
+            dict(
+                mode=mode,
+                curriculum=curriculum,
+                seed=seed,
+                total_timesteps=total_timesteps,
+                n_envs=n_envs,
+                eval_seed=eval_seed,
+                started=datetime.now().isoformat(timespec="seconds"),
+            ),
+            f,
+            indent=2,
+        )
+    print(f"Run directory: {run_dir}")
+
     check_env(gym.make("PushEnv-v0"))
 
-    n_envs = 8
     env = make_vec_env(
         "PushEnv-v0",
         n_envs=n_envs,
+        seed=seed,
         vec_env_cls=SubprocVecEnv,
         env_kwargs=dict(render_mode=None),
     )
@@ -175,30 +230,28 @@ def main(mode="ppo", curriculum=False):
         target_kl=0.02,
         policy_kwargs=dict(log_std_init=-0.3),  # std ~0.74
         verbose=1,
-        tensorboard_log=str(ROOT / "logs" / mode),
-        seed=42,
+        tensorboard_log=str(run_dir),
+        seed=seed,
         device="auto",
     )
 
+    # Same eval_seed across all training seeds, so every run is scored on the same episodes.
     eval_env = make_vec_env(
         "PushEnv-v0",
         n_envs=1,
+        seed=eval_seed,
         env_kwargs=dict(success_dist=0.01, render_mode=None),
     )
     if mode == "residual":
         eval_env = ResidualActionAdapter(eval_env)
     eval_env = VecNormalize(eval_env, training=False, norm_reward=False)
 
-    best_dir = ROOT / "models" / (
-        Path("best") if mode == "ppo" else Path("residual") / "best"
-    )
-    best_dir.mkdir(parents=True, exist_ok=True)
-
-    eval_callback = EvalCallback(
+    eval_callback = SeededEvalCallback(
         eval_env,
+        eval_seed=eval_seed,
         callback_on_new_best=SaveVecNormCallback(str(best_dir / "vecnormalize.pkl")),
         best_model_save_path=str(best_dir),
-        log_path=str(ROOT / "logs" / f"{mode}_eval"),
+        log_path=str(run_dir / "eval"),
         eval_freq=100_000 // n_envs,
         n_eval_episodes=40,
         deterministic=True,
@@ -210,26 +263,19 @@ def main(mode="ppo", curriculum=False):
         callbacks.insert(0, CurriculumCallback(start=0.10, end=0.01))
 
     model.learn(
-        total_timesteps=1_000_000,
-        tb_log_name=f"PushEnv_{mode}",
+        total_timesteps=total_timesteps,
+        tb_log_name="tb",
         callback=CallbackList(callbacks),
         progress_bar=True,
     )
 
-    save_path = ROOT / "models" / (
-        Path("ppo_push_env")
-        if mode == "ppo"
-        else Path("residual") / "ppo_push_env"
-    )
-    save_path.parent.mkdir(parents=True, exist_ok=True)
-    model.save(str(save_path))
-    print(f"Model saved to {save_path}.zip")
-
-    stats_path = best_dir / "vecnormalize.pkl"
-    env.save(str(stats_path))
+    # Final weights and their own normaliser stats. best/ keeps the stats that
+    # match best_model.zip; overwriting them would pair the wrong normaliser.
+    model.save(str(run_dir / "final_model"))
+    env.save(str(run_dir / "final_vecnormalize.pkl"))
     env.close()
     eval_env.close()
-    print(f"Environment statistics saved to {stats_path}")
+    print(f"Saved final model and stats to {run_dir}")
 
 if __name__ == "__main__":
     import argparse
@@ -241,5 +287,21 @@ if __name__ == "__main__":
         action="store_true",
         help="Enable success-distance curriculum (default: use PushEnv's default)",
     )
+    parser.add_argument("--seed", type=int, default=42)
+    parser.add_argument("--timesteps", type=int, default=10_000_000)
+    parser.add_argument("--n-envs", type=int, default=8)
+    parser.add_argument(
+        "--eval-seed", type=int, default=1_000_000,
+        help="Seed for the fixed evaluation episodes (keep equal across runs you compare)",
+    )
+    parser.add_argument("--run-name", help="Folder name under runs/<mode>/ (default: timestamp_seed)")
     args = parser.parse_args()
-    main(args.mode, curriculum=args.curriculum)
+    main(
+        args.mode,
+        curriculum=args.curriculum,
+        seed=args.seed,
+        total_timesteps=args.timesteps,
+        n_envs=args.n_envs,
+        eval_seed=args.eval_seed,
+        run_name=args.run_name,
+    )

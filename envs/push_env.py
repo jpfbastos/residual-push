@@ -169,14 +169,18 @@ class PushEnv(gym.Env):
         z_pos = self.data.site_xpos[self._tip_site_id][2]
 
         in_zone = dist < success_dist
-        reward = (2.0 * (self._prev_dist - dist)
-                  + 0.5 * (self._prev_contact_dist - contact_dist)
-                  + 0.001 * (self._prev_angle - angle)
-                  + 0.05 * in_zone
-                  + 10.0 * success
-                  - 1.0 * lost
-                  - 10.0 * off_table
-                  - 0.02 * (z_pos < 0.01))
+        # Per-term breakdown is logged to TensorBoard by InfoLoggerCallback.
+        terms = {
+            "progress": 2.0 * (self._prev_dist - dist),
+            "contact_approach": 0.5 * (self._prev_contact_dist - contact_dist),
+            "alignment": 0.001 * (self._prev_angle - angle),
+            "in_zone": 0.05 * in_zone,
+            "success": 10.0 * success,
+            "lost": -1.0 * lost,
+            "off_table": -10.0 * off_table,
+            "tip_low": -0.02 * (z_pos < 0.01),
+        }
+        reward = sum(terms.values())
 
         self._prev_dist = dist
         self._prev_contact_dist = contact_dist
@@ -188,7 +192,13 @@ class PushEnv(gym.Env):
         truncated = self.steps > self.max_steps
         if terminated or truncated:
             self._total_steps += self.steps
-        info = {"is_success": success, "off_table": off_table, "dist": dist}
+        info = {
+            "is_success": success,
+            "off_table": off_table,
+            "dist": dist,
+            "success_dist": success_dist,
+            "terms": terms,
+        }
         return self._get_obs(), float(reward), terminated, truncated, info
 
     def _block_goal_dist(self):

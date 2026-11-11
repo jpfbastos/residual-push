@@ -1,7 +1,6 @@
+from argparse import ArgumentParser
 from pathlib import Path
 import sys
-
-import numpy as np
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
@@ -10,36 +9,31 @@ import gymnasium as gym
 import envs
 
 from controllers.classical_push import ClassicalPushController
+from scripts.episodes import run_episodes
 
 
-def main(n_episodes=5):
+def main(n_episodes=5, seed=None, render=True, success_dist=0.01):
     env = gym.make(
-        "PushEnv-v0", render_mode="human", success_dist=0.01
+        "PushEnv-v0",
+        render_mode="human" if render else None,
+        success_dist=success_dist,
     )
-    controller = ClassicalPushController(success_dist=0.01)
+    controller = ClassicalPushController(success_dist=success_dist)
 
     try:
-        for episode in range(n_episodes):
-            controller.reset()
-            observation, _ = env.reset()
-            terminated = truncated = False
-            total_reward = 0.0
-
-            while not (terminated or truncated):
-                action = controller.predict(observation)
-                observation, reward, terminated, truncated, info = env.step(action)
-                total_reward += reward
-
-            print(
-                f"Episode {episode}: reward={total_reward:.3f}  "
-                f"success={info.get('is_success')}  "
-                f"off_table={info.get('off_table')}  "
-                f"truncated={truncated}  "
-                f"final_dist={info.get('dist'):.4f}"
-            )
+        run_episodes(env, controller, controller.predict, n_episodes, seed=seed)
     finally:
         env.close()
 
 
 if __name__ == "__main__":
-    main()
+    parser = ArgumentParser()
+    parser.add_argument("--episodes", type=int, default=5)
+    parser.add_argument("--success-dist", type=float, default=0.01)
+    parser.add_argument(
+        "--seed", type=int,
+        help="Base seed; episode k uses seed+k. Omit for random episodes",
+    )
+    parser.add_argument("--no-render", action="store_true", help="Run headless")
+    args = parser.parse_args()
+    main(args.episodes, args.seed, not args.no_render, args.success_dist)
