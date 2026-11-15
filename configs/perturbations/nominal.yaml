@@ -1,0 +1,12 @@
+# No perturbations: every parameter keeps the nominal value from scene_with_table.xml.
+# Each key accepts: null (nominal), a number (fixed), or [lo, hi] (uniform per episode).
+block_mass: null          # kg, nominal 0.2
+block_friction: null      # block-table sliding friction, nominal 0.5
+pusher_friction: null     # block-pusher sliding friction, nominal 0.5
+com_x: null               # m, COM offset in the block frame (|value| < 0.03)
+com_y: null
+contact_timeconst: null   # s, contact solref[0], nominal 0.02 (>= 0.004)
+contact_dampratio: null   # contact solref[1], nominal 1.0
+obs_pos_std: null         # m, noise on observed block xy
+obs_yaw_std: null         # rad, noise on observed block yaw
+obs_vel_std: null         # noise on observed block linear/yaw velocity

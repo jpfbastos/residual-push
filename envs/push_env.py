@@ -12,12 +12,14 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
 from controllers.cartesian_impedance import CartesianImpedance
+from envs.perturbations import Perturber
 
 class PushEnv(gym.Env):
     metadata = {'render_modes': ['human']}
     MAX_DELTA = 1
 
-    def __init__(self, seed=None, success_dist=None, n_substeps=25, max_steps = 400, render_mode=None):
+    def __init__(self, seed=None, success_dist=None, n_substeps=25, max_steps = 400, render_mode=None,
+                 perturbations=None):
         super().__init__()
         self.np_random, self.seed = seeding.np_random(seed)
         self.success_dist = success_dist
@@ -33,6 +35,10 @@ class PushEnv(gym.Env):
         self._init_geometry()
         self.action_space = spaces.Box(-1.0, 1.0, (3,), dtype=np.float32)
         self._init_obs_block()
+
+        self.perturber = Perturber(self.model, perturbations)
+        self.perturbation = dict(self.perturber.nominal)
+        self._noise_rng = np.random.default_rng(0)
 
         self.arm_dofs = [self.model.joint(f"joint{i}").dofadr[0] for i in range(1, 8)]
         self.arm_qpos = [self.model.joint(f"joint{i}").qposadr[0] for i in range(1, 8)]
@@ -97,24 +103,28 @@ class PushEnv(gym.Env):
     def reset(self, seed=None, options=None):
         super().reset(seed=seed)
 
-        mujoco.mj_resetDataKeyframe(self.model, self.data, self.model.key("home").id)  # sets qpos and ctrl to home
-        # get idx of joint
-        adr = self.model.joint("block_joint").qposadr[0]
         block_x = self.np_random.uniform(*self.spawn_x)
         block_y = self.np_random.uniform(*self.spawn_y)
-
         yaw = self.np_random.uniform(-np.pi, np.pi)
-        quat = np.array([np.cos(yaw / 2), 0.0, 0.0, np.sin(yaw / 2)])
-        self.data.qpos[adr:adr + 7] = np.concatenate([[block_x, block_y, self.block_z], quat])
 
         min_goal_dist = 0.15
-
         while True:
             goal_x = self.np_random.uniform(*self.spawn_x)
             goal_y = self.np_random.uniform(*self.spawn_y)
 
             if np.hypot(goal_x - block_x, goal_y - block_y) >= min_goal_dist:
                 break
+
+        # options={"perturbation": {"block_mass": 0.5}} pins values for this episode only.
+        fixed = (options or {}).get("perturbation")
+        self.perturbation = self.perturber.sample(self.np_random, fixed=fixed)
+        self.perturber.apply(self.perturbation, self.data)
+        self._noise_rng = np.random.default_rng(self.np_random.integers(2**63))
+
+        mujoco.mj_resetDataKeyframe(self.model, self.data, self.model.key("home").id)
+        adr = self.model.joint("block_joint").qposadr[0]
+        quat = np.array([np.cos(yaw / 2), 0.0, 0.0, np.sin(yaw / 2)])
+        self.data.qpos[adr:adr + 7] = np.concatenate([[block_x, block_y, self.block_z], quat])
         self.data.mocap_pos[self._goal_mocap_id] = [goal_x, goal_y, self.goal_z]
 
         mujoco.mj_forward(self.model, self.data)
@@ -130,7 +140,7 @@ class PushEnv(gym.Env):
         self._prev_angle = self._goal_block_tip_angle()
         self._in_zone = False
 
-        return self._get_obs(), {}
+        return self._get_obs(), {"perturbation": dict(self.perturbation)}
 
     def step(self, action):
         a_norm = np.clip(np.asarray(action, dtype=np.float64), -1.0, 1.0)
@@ -270,7 +280,17 @@ class PushEnv(gym.Env):
         block_vel = self._obj_vel(mujoco.mjtObj.mjOBJ_BODY, self._block_id)
         tip_vel = self._obj_vel(mujoco.mjtObj.mjOBJ_SITE, self._tip_site_id)
 
-        # TODO (perturbation harness): add observation noise to the block pose
+        # Observation noise on the block state only; reward and success use the true state.
+        p = self.perturbation
+        rng = self._noise_rng
+        if p["obs_pos_std"] > 0:
+            block = block.copy()
+            block[:2] += rng.normal(0.0, p["obs_pos_std"], 2)
+        if p["obs_yaw_std"] > 0:
+            yaw += rng.normal(0.0, p["obs_yaw_std"])
+        if p["obs_vel_std"] > 0:
+            block_vel = block_vel.copy()
+            block_vel[[2, 3, 4]] += rng.normal(0.0, p["obs_vel_std"], 3)
 
         parts = [
             (goal - block)[:2],  # block -> goal, xy           (2)
@@ -295,3 +315,6 @@ class PushEnv(gym.Env):
 
     def _set_success_dist(self, d):
         self.success_dist = d
+
+    def set_perturbation_config(self, config):
+        self.perturber.set_config(config)

@@ -1,0 +1,13 @@
+# Perturbations used by scripts/eval_classical_push.py and scripts/eval_ppo.py.
+# Edit this file to change evaluation conditions (both evals read it, so they stay comparable).
+# Each key accepts: null (nominal), a number (fixed), or [lo, hi] (uniform per episode).
+block_mass: [0.1, 0.8]          # kg, nominal 0.2
+block_friction: [0.2, 0.9]      # block-table sliding friction, nominal 0.5
+pusher_friction: [0.2, 0.9]     # block-pusher sliding friction, nominal 0.5
+com_x: [-0.015, 0.015]          # m, COM offset in the block frame (|value| < 0.03)
+com_y: [-0.015, 0.015]
+contact_timeconst: null         # s, contact solref[0], nominal 0.02 (>= 0.004); e.g. [0.01, 0.04]
+contact_dampratio: null         # contact solref[1], nominal 1.0; e.g. [0.7, 1.3]
+obs_pos_std: 0.002              # m
+obs_yaw_std: 0.02               # rad
+obs_vel_std: 0.01

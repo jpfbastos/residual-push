@@ -8,7 +8,7 @@ depend on previous samples, so using a different seed per episode means environm
 import numpy as np
 
 
-def run_episodes(env, controller, predict, n_episodes, seed=None):
+def run_episodes(env, controller, predict, n_episodes, seed=None, verbose=True):
     successes, final_dists = [], []
     for episode in range(n_episodes):
         episode_seed = None if seed is None else seed + episode
@@ -25,17 +25,19 @@ def run_episodes(env, controller, predict, n_episodes, seed=None):
 
         successes.append(bool(info.get("is_success")))
         final_dists.append(float(info.get("dist", np.nan)))
-        print(
-            f"Episode {episode}: reward={total_reward:.3f}  "
-            f"success={info.get('is_success')}  "
-            f"off_table={info.get('off_table')}  "
-            f"truncated={truncated}  "
-            f"final_dist={final_dists[-1]:.4f}"
-        )
+        if verbose:
+            print(
+                f"Episode {episode}: reward={total_reward:.3f}  "
+                f"success={info.get('is_success')}  "
+                f"off_table={info.get('off_table')}  "
+                f"truncated={truncated}  "
+                f"final_dist={final_dists[-1]:.4f}"
+            )
 
-    print(
-        f"\n{n_episodes} episodes: "
-        f"success={np.mean(successes):.2%}  "
-        f"mean final_dist={np.nanmean(final_dists):.4f}"
-    )
+    if verbose:
+        print(
+            f"\n{n_episodes} episodes: "
+            f"success={np.mean(successes):.2%}  "
+            f"mean final_dist={np.nanmean(final_dists):.4f}"
+        )
     return successes, final_dists

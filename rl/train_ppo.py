@@ -11,6 +11,7 @@ sys.path.insert(0, str(ROOT))
 
 import gymnasium as gym
 import envs
+from envs.perturbations import PerturbationConfig
 
 from stable_baselines3 import PPO
 from stable_baselines3.common.env_checker import check_env
@@ -184,7 +185,10 @@ def main(
     n_envs=8,
     eval_seed=1_000_000,
     run_name=None,
+    perturbations=None,
 ):
+    """``perturbations``: dict / PerturbationConfig used for both training and eval envs."""
+    perturbations = PerturbationConfig.coerce(perturbations).to_dict()
     if mode not in {"ppo", "residual"}:
         raise ValueError(f"Unknown training mode: {mode}")
 
@@ -199,6 +203,7 @@ def main(
                 total_timesteps=total_timesteps,
                 n_envs=n_envs,
                 eval_seed=eval_seed,
+                perturbations=perturbations,
                 started=datetime.now().isoformat(timespec="seconds"),
             ),
             f,
@@ -206,14 +211,14 @@ def main(
         )
     print(f"Run directory: {run_dir}")
 
-    check_env(gym.make("PushEnv-v0"))
+    check_env(gym.make("PushEnv-v0", perturbations=perturbations))
 
     env = make_vec_env(
         "PushEnv-v0",
         n_envs=n_envs,
         seed=seed,
         vec_env_cls=SubprocVecEnv,
-        env_kwargs=dict(render_mode=None),
+        env_kwargs=dict(render_mode=None, perturbations=perturbations),
     )
     if mode == "residual":
         env = ResidualActionAdapter(env)
@@ -240,7 +245,7 @@ def main(
         "PushEnv-v0",
         n_envs=1,
         seed=eval_seed,
-        env_kwargs=dict(success_dist=0.01, render_mode=None),
+        env_kwargs=dict(success_dist=0.01, render_mode=None, perturbations=perturbations),
     )
     if mode == "residual":
         eval_env = ResidualActionAdapter(eval_env)
@@ -295,6 +300,9 @@ if __name__ == "__main__":
         help="Seed for the fixed evaluation episodes (keep equal across runs you compare)",
     )
     parser.add_argument("--run-name", help="Folder name under runs/<mode>/ (default: timestamp_seed)")
+    parser.add_argument(
+        "--perturbations", help="Perturbation YAML, e.g. configs/perturbations/train.yaml (default: nominal)"
+    )
     args = parser.parse_args()
     main(
         args.mode,
@@ -304,4 +312,5 @@ if __name__ == "__main__":
         n_envs=args.n_envs,
         eval_seed=args.eval_seed,
         run_name=args.run_name,
+        perturbations=PerturbationConfig.coerce(args.perturbations),
     )

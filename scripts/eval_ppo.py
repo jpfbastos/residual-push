@@ -11,6 +11,7 @@ sys.path.insert(0, str(ROOT))
 import gymnasium as gym
 from gymnasium import spaces
 import envs  # Registers PushEnv-v0
+from envs.perturbations import EVAL_CONFIG
 from stable_baselines3 import PPO
 from stable_baselines3.common.vec_env import DummyVecEnv, VecNormalize
 
@@ -72,7 +73,7 @@ def main(
         raise FileNotFoundError(f"Could not find model: {model_path}")
     if not stats_path.exists():
         raise FileNotFoundError(f"Could not find environment statistics: {stats_path}")
-    print(f"mode={mode}  model={model_path}")
+    print(f"mode={mode}  model={model_path}  perturbations={EVAL_CONFIG.relative_to(ROOT)}")
 
     observation_size = 19 if mode == "ppo" else 22
     stats_env = VecNormalize.load(
@@ -97,6 +98,7 @@ def main(
         "PushEnv-v0",
         render_mode="human" if render else None,
         success_dist=success_dist,
+        perturbations=EVAL_CONFIG,
     )
     try:
         run_episodes(

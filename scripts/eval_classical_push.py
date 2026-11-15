@@ -7,16 +7,19 @@ sys.path.insert(0, str(ROOT))
 
 import gymnasium as gym
 import envs
+from envs.perturbations import EVAL_CONFIG
 
 from controllers.classical_push import ClassicalPushController
 from scripts.episodes import run_episodes
 
 
 def main(n_episodes=5, seed=None, render=True, success_dist=0.01):
+    print(f"perturbations={EVAL_CONFIG.relative_to(ROOT)}")
     env = gym.make(
         "PushEnv-v0",
         render_mode="human" if render else None,
         success_dist=success_dist,
+        perturbations=EVAL_CONFIG,
     )
     controller = ClassicalPushController(success_dist=success_dist)
 
