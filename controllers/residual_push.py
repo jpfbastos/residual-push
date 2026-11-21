@@ -4,6 +4,7 @@ from stable_baselines3.common.vec_env import VecNormalize
 
 
 ACTION_LIMIT = 1.0
+RESIDUAL_SCALE = 0.1  # with the initial policy std of ~0.74, ~7.4 cm of exploration
 
 
 class PPOController:
@@ -65,4 +66,5 @@ class ResidualPPOController(PPOController):
         delta = self._predict_policy(policy_observation, deterministic)
         if delta.shape != (3,):
             raise ValueError(f"Expected a 3-element PPO action, got {delta.shape}")
-        return np.clip(classical_action + delta, -ACTION_LIMIT, ACTION_LIMIT)
+        residual = RESIDUAL_SCALE * np.clip(delta, -1.0, 1.0)
+        return np.clip(classical_action + residual, -ACTION_LIMIT, ACTION_LIMIT)

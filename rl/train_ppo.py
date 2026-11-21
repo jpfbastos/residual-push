@@ -12,6 +12,7 @@ sys.path.insert(0, str(ROOT))
 import gymnasium as gym
 import envs
 from envs.perturbations import PerturbationConfig
+from controllers.residual_push import RESIDUAL_SCALE
 
 from stable_baselines3 import PPO
 from stable_baselines3.common.env_checker import check_env
@@ -48,6 +49,8 @@ class ResidualActionAdapter(VecEnvWrapper):
 
     def reset(self):
         observations = self.venv.reset()
+        for controller in self.controllers:  # PI integral and mode are per episode
+            controller.reset()
         self.classical_actions = np.stack(
             [
                 controller.predict(observation)
@@ -57,8 +60,9 @@ class ResidualActionAdapter(VecEnvWrapper):
         return self._policy_observation(observations)
 
     def step_async(self, deltas):
+        residuals = RESIDUAL_SCALE * np.clip(np.asarray(deltas, dtype=np.float32), -1.0, 1.0)
         actions = np.clip(
-            self.classical_actions + np.asarray(deltas, dtype=np.float32),
+            self.classical_actions + residuals,
             self.venv.action_space.low,
             self.venv.action_space.high,
         )
@@ -204,6 +208,7 @@ def main(
                 n_envs=n_envs,
                 eval_seed=eval_seed,
                 perturbations=perturbations,
+                residual_scale=RESIDUAL_SCALE if mode == "residual" else None,
                 started=datetime.now().isoformat(timespec="seconds"),
             ),
             f,
@@ -239,6 +244,11 @@ def main(
         seed=seed,
         device="auto",
     )
+
+    if mode == "residual":
+        # Zero the action head so training begins exactly at the classical controller's behaviour.
+        model.policy.action_net.weight.data.zero_()
+        model.policy.action_net.bias.data.zero_()
 
     # Same eval_seed across all training seeds, so every run is scored on the same episodes.
     eval_env = make_vec_env(
