@@ -20,7 +20,7 @@ class PushEnv(gym.Env):
     MIN_BLOCK_RADIUS = 0.40  # m from the robot base (world origin); see reset()
 
     def __init__(self, seed=None, success_dist=None, n_substeps=25, max_steps = 400, render_mode=None,
-                 perturbations=None):
+                 perturbations=None, e_max=None):
         super().__init__()
         self.np_random, self.seed = seeding.np_random(seed)
         self.success_dist = success_dist
@@ -51,10 +51,13 @@ class PushEnv(gym.Env):
                                      "pusher_tip",
                                      self.arm_dofs,
                                      self.arm_qpos,
-                                     Kp=300.0, Kr=50.0, Kn=50.0,
-                                     Kd=np.array([119.5, 111.0, 148.5]),
+                                     # Tuned with scripts/tune_classical.py: K = 900 N/m and
+                                     # damping 1.4x the ratio of the original K = 300 setting.
+                                     Kp=900.0, Kr=50.0, Kn=50.0,
+                                     Kd=np.array([289.8, 269.2, 360.1]),
                                      Dr=np.array([5.5, 5.6, 2.45]),
-                                     Dn=15.0)
+                                     Dn=15.0,
+                                     e_max=e_max)
 
         self.pos_target = np.zeros(3)
         self.ori_target = np.zeros((3,3))

@@ -4,7 +4,7 @@ import mujoco
 
 class CartesianImpedance:
     def __init__(self, model, data, site_name, arm_dof_ids, arm_qpos, Kp, Kr, Kn,
-                 Kd=10, Dr=5, Dn=5, e_max=0.1):
+                 Kd=10, Dr=5, Dn=5, e_max=None):
         self.model = model
         self.data = data
         self.site_id = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_SITE, site_name)
@@ -29,7 +29,8 @@ class CartesianImpedance:
         Jp, Jr = self._jacobian()
         qd = self.data.qvel[self.dofs]
         ep = x_des - self.data.site_xpos[self.site_id]
-        ep *= min(1., self.e_max / float(np.linalg.norm(ep)+1e-9))
+        if self.e_max is not None:  # optional clamp on the position error, in m
+            ep *= min(1., self.e_max / float(np.linalg.norm(ep)+1e-9))
         vp = Jp @ qd
         Fp = self.Kp * ep - self.Kd * vp
 

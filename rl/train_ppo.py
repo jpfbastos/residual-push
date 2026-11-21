@@ -190,6 +190,7 @@ def main(
     eval_seed=1_000_000,
     run_name=None,
     perturbations=None,
+    e_max=None,
 ):
     """``perturbations``: dict / PerturbationConfig used for both training and eval envs."""
     perturbations = PerturbationConfig.coerce(perturbations).to_dict()
@@ -209,6 +210,7 @@ def main(
                 eval_seed=eval_seed,
                 perturbations=perturbations,
                 residual_scale=RESIDUAL_SCALE if mode == "residual" else None,
+                e_max=e_max,
                 started=datetime.now().isoformat(timespec="seconds"),
             ),
             f,
@@ -216,14 +218,14 @@ def main(
         )
     print(f"Run directory: {run_dir}")
 
-    check_env(gym.make("PushEnv-v0", perturbations=perturbations))
+    check_env(gym.make("PushEnv-v0", perturbations=perturbations, e_max=e_max))
 
     env = make_vec_env(
         "PushEnv-v0",
         n_envs=n_envs,
         seed=seed,
         vec_env_cls=SubprocVecEnv,
-        env_kwargs=dict(render_mode=None, perturbations=perturbations),
+        env_kwargs=dict(render_mode=None, perturbations=perturbations, e_max=e_max),
     )
     if mode == "residual":
         env = ResidualActionAdapter(env)
@@ -255,7 +257,7 @@ def main(
         "PushEnv-v0",
         n_envs=1,
         seed=eval_seed,
-        env_kwargs=dict(success_dist=0.01, render_mode=None, perturbations=perturbations),
+        env_kwargs=dict(success_dist=0.01, render_mode=None, perturbations=perturbations, e_max=e_max),
     )
     if mode == "residual":
         eval_env = ResidualActionAdapter(eval_env)
@@ -311,6 +313,10 @@ if __name__ == "__main__":
     )
     parser.add_argument("--run-name", help="Folder name under runs/<mode>/ (default: timestamp_seed)")
     parser.add_argument(
+        "--e-max", type=float,
+        help="Clamp the impedance position error to this many metres (default: no clamp)",
+    )
+    parser.add_argument(
         "--perturbations", help="Perturbation YAML, e.g. configs/perturbations/train.yaml (default: nominal)"
     )
     args = parser.parse_args()
@@ -322,5 +328,6 @@ if __name__ == "__main__":
         n_envs=args.n_envs,
         eval_seed=args.eval_seed,
         run_name=args.run_name,
+        e_max=args.e_max,
         perturbations=PerturbationConfig.coerce(args.perturbations),
     )

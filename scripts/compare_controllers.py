@@ -41,14 +41,14 @@ def make_controller(kind, run=None, checkpoint="final", success_dist=0.01):
 
 
 def run_chunk(job):
-    condition, label, kind, run, checkpoint, episode_set, start, n = job
+    condition, label, kind, run, checkpoint, episode_set, start, n, e_max = job
     os.chdir(ROOT)
     import gymnasium as gym
     import envs  # noqa: F401  registers PushEnv-v0
     from envs.perturbations import EVAL_CONFIG
 
     perturbations = EVAL_CONFIG if condition == "eval.yaml" else None
-    env = gym.make("PushEnv-v0", perturbations=perturbations).unwrapped
+    env = gym.make("PushEnv-v0", perturbations=perturbations, e_max=e_max).unwrapped
     controller = make_controller(kind, run, checkpoint)
     rows = []
     for episode in range(start, start + n):
@@ -101,6 +101,10 @@ def main():
     parser.add_argument("--residual", nargs="*", default=[], help="Residual run directories")
     parser.add_argument("--ppo", nargs="*", default=[], help="Pure PPO run directories")
     parser.add_argument("--ppo-curriculum", nargs="*", default=[], help="Pure PPO + curriculum run directories")
+    parser.add_argument(
+        "--e-max", type=float,
+        help="Clamp the impedance position error to this many metres, for every controller (default: no clamp)",
+    )
     parser.add_argument("--checkpoint", choices=("best", "final"), default="final")
     parser.add_argument("--episodes", type=int, default=200)
     parser.add_argument("--sets", type=int, default=1, help="Disjoint episode sets per controller")
@@ -116,7 +120,8 @@ def main():
               "ppo": [c[0] for c in controllers if c[0].startswith("ppo ")],
               "ppo+curr": [c[0] for c in controllers if c[0].startswith("ppo+curr")]}
 
-    jobs = [(cond, label, kind, run, args.checkpoint, episode_set, start, min(CHUNK, args.episodes - start))
+    print(f"impedance error clamp: {args.e_max if args.e_max is not None else 'none'}")
+    jobs = [(cond, label, kind, run, args.checkpoint, episode_set, start, min(CHUNK, args.episodes - start), args.e_max)
             for cond in CONDITIONS for label, kind, run in controllers for episode_set in range(args.sets)
             for start in range(0, args.episodes, CHUNK)]
     with Pool(args.workers) as pool:
