@@ -17,6 +17,7 @@ from envs.perturbations import Perturber
 class PushEnv(gym.Env):
     metadata = {'render_modes': ['human']}
     MAX_DELTA = 1
+    MIN_BLOCK_RADIUS = 0.40  # m from the robot base (world origin); see reset()
 
     def __init__(self, seed=None, success_dist=None, n_substeps=25, max_steps = 400, render_mode=None,
                  perturbations=None):
@@ -103,8 +104,11 @@ class PushEnv(gym.Env):
     def reset(self, seed=None, options=None):
         super().reset(seed=seed)
 
-        block_x = self.np_random.uniform(*self.spawn_x)
-        block_y = self.np_random.uniform(*self.spawn_y)
+        while True:
+            block_x = self.np_random.uniform(*self.spawn_x)
+            block_y = self.np_random.uniform(*self.spawn_y)
+            if np.hypot(block_x, block_y) >= self.MIN_BLOCK_RADIUS:
+                break
         yaw = self.np_random.uniform(-np.pi, np.pi)
 
         min_goal_dist = 0.15
