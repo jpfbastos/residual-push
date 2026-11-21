@@ -25,7 +25,7 @@ class ClassicalPushController:
             raise ValueError(f"Expected a 19-element observation, got {observation.shape}")
 
         tip_to_block = observation[2:5]
-        block_to_goal = np.append(observation[:2], 0.0)
+        block_to_goal = observation[:2]
         goal_distance = np.linalg.norm(block_to_goal)
         goal_direction = block_to_goal / (goal_distance + 1e-8)
         tip_direction = tip_to_block[:2] / (np.linalg.norm(tip_to_block[:2]) + 1e-8)
