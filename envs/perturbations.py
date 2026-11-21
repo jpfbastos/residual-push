@@ -13,8 +13,6 @@ PHYSICS_KEYS = (
     "pusher_friction",    # sliding friction, block-pusher pair
     "com_x",              # m, COM offset from block frame
     "com_y",              # m
-    "contact_timeconst",  # contact stiffness (solref[0]) of both block contact pairs
-    "contact_dampratio",  # damp ratio (solref[1])
 )
 NOISE_KEYS = (
     "obs_pos_std",        # m, Gaussian noise on observed block xy
@@ -47,8 +45,6 @@ class PerturbationConfig:
     pusher_friction: object = None
     com_x: object = None
     com_y: object = None
-    contact_timeconst: object = None
-    contact_dampratio: object = None
     obs_pos_std: object = None
     obs_yaw_std: object = None
     obs_vel_std: object = None
@@ -56,10 +52,9 @@ class PerturbationConfig:
     def __post_init__(self):
         for f in fields(self):
             object.__setattr__(self, f.name, _coerce_spec(f.name, getattr(self, f.name)))
-        for name in ("block_mass", "contact_timeconst", "contact_dampratio"):
-            spec = getattr(self, name)
-            if spec is not None and _spec_bounds(spec)[0] <= 0:
-                raise ValueError(f"{name} must be > 0, got {spec}")
+        spec = self.block_mass
+        if spec is not None and _spec_bounds(spec)[0] <= 0:
+            raise ValueError(f"block_mass must be > 0, got {spec}")
         for name in ("block_friction", "pusher_friction") + NOISE_KEYS:
             spec = getattr(self, name)
             if spec is not None and _spec_bounds(spec)[0] < 0:
@@ -120,9 +115,7 @@ class Perturber:
         self._inertia0 = model.body_inertia[self._block].copy()
         self._ipos0 = model.body_ipos[self._block].copy()
         self._pair_friction0 = model.pair_friction[self._pair_ids].copy()
-        self._pair_solref0 = model.pair_solref[self._pair_ids].copy()
         self._block_half = model.geom(block_geom).size[:2].copy()
-        self._timestep = float(model.opt.timestep)
 
         # The compiler marks the block as "simple" (COM at the body origin, diagonal
         # mass matrix) and skips work based on it. A COM offset breaks both
@@ -138,8 +131,6 @@ class Perturber:
             "pusher_friction": float(self._pair_friction0[1, 0]),
             "com_x": 0.0,
             "com_y": 0.0,
-            "contact_timeconst": float(self._pair_solref0[0, 0]),
-            "contact_dampratio": float(self._pair_solref0[0, 1]),
             "obs_pos_std": 0.0,
             "obs_yaw_std": 0.0,
             "obs_vel_std": 0.0,
@@ -156,12 +147,6 @@ class Perturber:
             spec = getattr(config, axis)
             if spec is not None and max(abs(b) for b in _spec_bounds(spec)) >= half:
                 raise ValueError(f"{axis}={spec} puts the COM outside the block (half size {half:.3f} m)")
-        spec = config.contact_timeconst
-        if spec is not None and _spec_bounds(spec)[0] < 2 * self._timestep:
-            raise ValueError(
-                f"contact_timeconst={spec} is below 2*timestep={2 * self._timestep}; "
-                "MuJoCo would clamp it"
-            )
 
     def sample(self, rng, fixed=None):
         """One episode's parameters. ``fixed`` pins individual values for this call only."""
@@ -195,9 +180,6 @@ class Perturber:
         m.pair_friction[self._pair_ids] = self._pair_friction0
         m.pair_friction[self._table_pair, 0:2] = params["block_friction"]
         m.pair_friction[self._pusher_pair, 0:2] = params["pusher_friction"]
-
-        m.pair_solref[self._pair_ids, 0] = params["contact_timeconst"]
-        m.pair_solref[self._pair_ids, 1] = params["contact_dampratio"]
 
         # Recompute derived constants (subtree masses, invweights) for the new body.
         mujoco.mj_setConst(m, data)
