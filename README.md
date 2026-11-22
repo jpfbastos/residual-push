@@ -61,11 +61,13 @@ slower policy (about 90 steps under perturbation, against 65 for the other two).
 ### Classical controller
 
 The pusher tip is driven by a Cartesian impedance controller (stiffness
-900 N/m, overdamped), which tracks a target position. A simple
-pushing script in [`controllers/classical_push.py`](controllers/classical_push.py)
-moves that target around. It approaches the block from the side opposite the
-goal, pushes it, and stops once the block
-is close enough.
+900 N/m, damping 290 / 269 / 360 N·s/m in x / y / z), which tracks a target
+position. That's heavily overdamped: with the tip's effective mass at the start
+pose (about 0.8 / 0.6 / 3.9 kg) it's a damping ratio of roughly 5.5 / 5.7 / 3.
+A simple pushing script in
+[`controllers/classical_push.py`](controllers/classical_push.py) moves that
+target around. It approaches the block from the side opposite the goal, pushes
+it, and stops once the block is close enough.
 
 While pushing, the target is set by a PI controller on the block-to-goal
 error. The integral term matters because the impedance controller has none of
@@ -74,8 +76,9 @@ goal, and a P-only version almost never succeeds in that case.
 
 The gains were tuned with [`scripts/tune_classical.py`](scripts/tune_classical.py)
 on 200 perturbed episodes kept separate from the test episodes (seeds
-70000+): first a grid over stiffness (300–1800 N/m), damping and the integral
-gain, then the outer P and I gains at the chosen stiffness.
+70000+): first a grid over stiffness (300–1800 N/m), damping (three Kd settings per
+stiffness, between 78 and 509 N·s/m) and the integral gain, then the outer P
+and I gains at the chosen stiffness and damping.
 
 ### Residual policy
 
@@ -130,7 +133,7 @@ Tuning the classical controller (the chosen gains are already the defaults in
 
 ```bash
 python scripts/tune_classical.py
-python scripts/tune_classical.py --stiffness 900 --damping 1.4 \
+python scripts/tune_classical.py --stiffness 900 --kd 289.8,269.2,360.1 \
   --kp 0.5 1 2 3 --ki 0 0.25 0.5 1 --out logs/tune_classical_outer.json
 ```
 
