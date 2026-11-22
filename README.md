@@ -10,8 +10,8 @@ right.
 
 Left: classical controller. Right: classical controller plus the learned
 residual. Both run the same held-out perturbed episode (seed 10040, block
-starting 31 cm from the goal), in real time. The residual version finishes in
-7.9 s, the classical one in 9.1 s.
+starting 32 cm from the goal), in real time. The residual version finishes in
+4.0 s, the classical one in 8.2 s.
 
 ## Results
 
@@ -39,27 +39,29 @@ to be a lucky pick.
 
 | Controller | Nominal success | Nominal steps | Perturbed success | Perturbed steps |
 |---|---|---|---|---|
-| Classical PI | 94.5% ± 0.9% | 164 ± 1 | 94.7% ± 1.3% | 174 ± 4 |
-| Pure PPO (3 seeds) | TBD | TBD | TBD | TBD |
-| Pure PPO + curriculum (3 seeds) | TBD | TBD | TBD | TBD |
-| Classical PI + PPO residual (3 seeds) | 94.0% ± 2.6% | 120 ± 1 | 94.6% ± 2.7% | 134 ± 3 |
+| Classical PI (tuned) | 95.3% ± 1.9% | 107 ± 1 | 96.7% ± 0.8% | 115 ± 2 |
+| Classical PI + PPO residual (3 seeds) | 99.0% ± 0.8% | 61 ± 7 | 97.9% ± 1.9% | 74 ± 12 |
+| Pure PPO (3 seeds) | to do | | | |
+| Pure PPO + curriculum (3 seeds) | to do | | | |
 
 Each cell is the mean over that controller's evaluations, ± their standard
 deviation. "Steps" is the average length of successful episodes, at 0.05 s per
 step.
 
-The residual doesn't change the success rate in any meaningful way; the
-classical controller already gets about 95%. What it does change is speed: it
-gets the block to the goal about 25% faster (164 → 120 steps at nominal,
-174 → 134 under perturbation). Every seed is faster on every episode set, by
-at least 33 steps.
+The main effect of the residual is speed: it gets the block to the goal about
+40% faster (107 → 61 steps at nominal, 115 → 74 under perturbation). Every
+seed is faster on every episode set, by at least 24 steps. It also helps
+accuracy at nominal (all 9 evaluations at 98% or above, against 94–97.5% for
+the classical controller); under perturbation the two are within each other's
+spread. Most of the residual's spread comes from one seed, which settled on a
+slower policy (about 90 steps under perturbation, against 65 for the other two).
 
 ## How it works
 
 ### Classical controller
 
 The pusher tip is driven by a Cartesian impedance controller (stiffness
-300 N/m, close to critically damped), which tracks a target position. A simple
+900 N/m, overdamped), which tracks a target position. A simple
 pushing script in [`controllers/classical_push.py`](controllers/classical_push.py)
 moves that target around. It approaches the block from the side opposite the
 goal, pushes it, and stops once the block
@@ -69,6 +71,11 @@ While pushing, the target is set by a PI controller on the block-to-goal
 error. The integral term matters because the impedance controller has none of
 its own: with heavy, high-friction blocks the pusher stalls just short of the
 goal, and a P-only version almost never succeeds in that case.
+
+The gains were tuned with [`scripts/tune_classical.py`](scripts/tune_classical.py)
+on 200 perturbed episodes kept separate from the test episodes (seeds
+70000+): first a grid over stiffness (300–1800 N/m), damping and the integral
+gain, then the outer P and I gains at the chosen stiffness.
 
 ### Residual policy
 
@@ -115,6 +122,16 @@ gives the same physics, start poses and noise.
 python3 -m venv .venv
 source .venv/bin/activate
 python -m pip install -r requirements.txt
+```
+
+Tuning the classical controller (the chosen gains are already the defaults in
+[`envs/push_env.py`](envs/push_env.py) and
+[`controllers/classical_push.py`](controllers/classical_push.py)):
+
+```bash
+python scripts/tune_classical.py
+python scripts/tune_classical.py --stiffness 900 --damping 1.4 \
+  --kp 0.5 1 2 3 --ki 0 0.25 0.5 1 --out logs/tune_classical_outer.json
 ```
 
 Training (one residual run takes about 1.3 h on an M-series MacBook):

@@ -210,6 +210,7 @@ def main(
                 eval_seed=eval_seed,
                 perturbations=perturbations,
                 residual_scale=RESIDUAL_SCALE if mode == "residual" else None,
+                log_std_init=-0.3 if mode == "residual" else -3.0,
                 e_max=e_max,
                 started=datetime.now().isoformat(timespec="seconds"),
             ),
@@ -231,6 +232,8 @@ def main(
         env = ResidualActionAdapter(env)
     env = VecNormalize(env, norm_obs=True, norm_reward=True, clip_obs=10.0)
 
+    log_std_init, ent_coef = (-0.3, 0.005) if mode == "residual" else (-3.0, 0.0)
+
     model = PPO(
         "MlpPolicy", env,
         learning_rate=1e-4,
@@ -238,19 +241,19 @@ def main(
         batch_size=256,
         n_epochs=10,
         gamma=0.99, gae_lambda=0.95, clip_range=0.2,
-        ent_coef=0.005,
+        ent_coef=ent_coef,
         target_kl=0.02,
-        policy_kwargs=dict(log_std_init=-0.3),  # std ~0.74
+        policy_kwargs=dict(log_std_init=log_std_init),
         verbose=1,
         tensorboard_log=str(run_dir),
         seed=seed,
         device="auto",
     )
 
-    if mode == "residual":
-        # Zero the action head so training begins exactly at the classical controller's behaviour.
-        model.policy.action_net.weight.data.zero_()
-        model.policy.action_net.bias.data.zero_()
+    # Zero the action head: the residual starts exactly at the classical controller's behaviour,
+    # pure PPO starts by holding the tip still.
+    model.policy.action_net.weight.data.zero_()
+    model.policy.action_net.bias.data.zero_()
 
     # Same eval_seed across all training seeds, so every run is scored on the same episodes.
     eval_env = make_vec_env(
