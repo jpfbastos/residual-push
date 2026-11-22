@@ -9,9 +9,11 @@ right.
 ![Classical PI vs classical PI + PPO residual on the same perturbed episode](assets/media/residual_vs_classical.gif)
 
 Left: classical controller. Right: classical controller plus the learned
-residual. Both run the same held-out perturbed episode (seed 10040, block
-starting 32 cm from the goal), in real time. The residual version finishes in
-4.0 s, the classical one in 8.2 s.
+residual (training seed 0). Both run the same held-out perturbed episode, in
+real time. The episode represents the one in the first test set
+whose speedup is closest to the median over all test episodes (38%). Here
+that's seed 10156, with the block starting 22 cm from the goal; the residual
+version finishes in 3.1 s, the classical one in 5.0 s.
 
 ## Results
 
@@ -37,20 +39,31 @@ to be a lucky pick.
 
 ### Numbers
 
-| Controller | Nominal success | Nominal steps | Perturbed success | Perturbed steps |
+Success rate:
+
+| Controller | Nominal | Perturbed |
+|---|---|---|
+| Classical PI (tuned) | 95.3% ± 1.9% | 96.7% ± 0.8% |
+| Classical PI + PPO residual (3 seeds) | 99.0% ± 0.8% | 97.9% ± 1.9% |
+| Pure PPO (3 seeds) | to do | to do |
+| Pure PPO + curriculum (3 seeds) | to do | to do |
+
+Steps to the goal, against the classical controller:
+
+| Controller | Nominal steps | Nominal speedup | Perturbed steps | Perturbed speedup |
 |---|---|---|---|---|
-| Classical PI (tuned) | 95.3% ± 1.9% | 107 ± 1 | 96.7% ± 0.8% | 115 ± 2 |
-| Classical PI + PPO residual (3 seeds) | 99.0% ± 0.8% | 61 ± 7 | 97.9% ± 1.9% | 74 ± 12 |
+| Classical PI + PPO residual (3 seeds) | 107 → 61 ± 7 | 40% | 115 → 73 ± 12 | 38% |
 | Pure PPO (3 seeds) | to do | | | |
 | Pure PPO + curriculum (3 seeds) | to do | | | |
 
 Each cell is the mean over that controller's evaluations, ± their standard
-deviation. "Steps" is the average length of successful episodes, at 0.05 s per
-step.
+deviation. Steps are 0.05 s each and are only compared on episodes both
+controllers solved (about 190 of every 200). "Speedup" is the median over those
+episodes of 1 − learned steps / classical steps.
 
 The main effect of the residual is speed: it gets the block to the goal about
-40% faster (107 → 61 steps at nominal, 115 → 74 under perturbation). Every
-seed is faster on every episode set, by at least 24 steps. It also helps
+40% faster. Every seed is faster on average on every episode set, by at least
+24 steps, and faster on 72–99% of individual episodes. It also helps
 accuracy at nominal (all 9 evaluations at 98% or above, against 94–97.5% for
 the classical controller); under perturbation the two are within each other's
 spread. Most of the residual's spread comes from one seed, which settled on a
@@ -70,15 +83,18 @@ target around. It approaches the block from the side opposite the goal, pushes
 it, and stops once the block is close enough.
 
 While pushing, the target is set by a PI controller on the block-to-goal
-error. The integral term matters because the impedance controller has none of
-its own: with heavy, high-friction blocks the pusher stalls just short of the
-goal, and a P-only version almost never succeeds in that case.
+error. The proportional part does most of the work; the integral term removes
+the small offset left when friction stops a heavy block just short of the
+goal, which the impedance controller can't correct on its own as it has no integral
+term.
 
 The gains were tuned with [`scripts/tune_classical.py`](scripts/tune_classical.py)
 on 200 perturbed episodes kept separate from the test episodes (seeds
 70000+): first a grid over stiffness (300–1800 N/m), damping (three Kd settings per
 stiffness, between 78 and 509 N·s/m) and the integral gain, then the outer P
-and I gains at the chosen stiffness and damping.
+and I gains at the chosen stiffness and damping. Settings were ranked by
+success rate first and speed second, so the controller is the fastest one that
+doesn't give up reliability.
 
 ### Residual policy
 

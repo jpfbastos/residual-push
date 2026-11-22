@@ -73,6 +73,9 @@ def summarise(rows, groups, n_episodes, n_sets):
     def rate(sel):
         return np.mean([r[4] for r in sel])
 
+    def sd(x):
+        return np.nanstd(x, ddof=1) if len(x) > 1 else float("nan")
+
     def steps(sel):
         ok = [r[5] for r in sel if r[4]]
         return np.mean(ok) if ok else float("nan")
@@ -91,9 +94,31 @@ def summarise(rows, groups, n_episodes, n_sets):
                      for lbl in labels for i in range(n_sets)]
             s = np.array([rate(e) for e in evals])
             t = np.array([steps(e) for e in evals])
-            sd = lambda x: np.nanstd(x, ddof=1) if len(x) > 1 else float("nan")
             print(f"  {group:9} over {len(labels)} seed(s) x {n_sets} set(s): "
                   f"success {s.mean():.1%} ± {sd(s):.1%}   steps {np.nanmean(t):.0f} ± {sd(t):.0f}   (mean ± sd)")
+
+        # Steps on the episodes both the classical controller and the learned one solved, so a
+        # controller isn't credited for being fast only on the episodes it happens to finish.
+        classical = {(r[2], r[3]): r for r in rows if r[0] == condition and r[1] == "classical"}
+        for group, labels in groups.items():
+            if group == "classical" or not labels:
+                continue
+            base, ours, ratio, both = [], [], [], []
+            for lbl in labels:
+                for i in range(n_sets):
+                    pairs = [(classical[(i, r[3])][5], r[5]) for r in rows
+                             if r[0] == condition and r[1] == lbl and r[2] == i
+                             and r[4] and classical[(i, r[3])][4]]
+                    both.append(len(pairs))
+                    if pairs:
+                        c, o = np.array(pairs).T
+                        base.append(c.mean())
+                        ours.append(o.mean())
+                        ratio.extend(1 - o / c)
+            if base:
+                print(f"  {group:9} vs classical, episodes both solved ({np.mean(both):.0f} of {n_episodes} per eval): "
+                      f"steps {np.mean(base):.0f} -> {np.mean(ours):.0f} ± {sd(np.array(ours)):.0f}, "
+                      f"median per-episode speedup {np.median(ratio):.0%}")
 
 
 def main():
